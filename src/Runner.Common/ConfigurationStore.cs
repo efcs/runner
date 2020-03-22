@@ -15,6 +15,9 @@ namespace GitHub.Runner.Common
     [DataContract]
     public sealed class RunnerSettings
     {
+        [DataMember(Name = "IsHostedServer")]
+        private bool? _isHostedServer;
+
         [DataMember(EmitDefaultValue = false)]
         public int AgentId { get; set; }
 
@@ -41,6 +44,21 @@ namespace GitHub.Runner.Common
 
         [DataMember(EmitDefaultValue = false)]
         public string MonitorSocketAddress { get; set; }
+
+        [IgnoreDataMember]
+        public bool IsHostedServer
+        {
+            get
+            {
+                // Old runners do not have this property. Hosted runners likely don't have this property either.
+                return _isHostedServer ?? true;
+            }
+
+            set
+            {
+                _isHostedServer = value;
+            }
+        }
 
         /// <summary>
         // Computed property for convenience. Can either return:

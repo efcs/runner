@@ -58,8 +58,14 @@ namespace GitHub.Runner.Worker
                 executionContext.Warning("The 'PREVIEW_ACTION_TOKEN' secret is depreciated. Please remove it from the repository's secrets");
             }
 
-            // Clear the cache (local runner)
-            IOUtil.DeleteDirectory(HostContext.GetDirectory(WellKnownDirectory.Actions), executionContext.CancellationToken);
+            // Clear the cache (for self-hosted runners)
+            // Note, temporarily avoid this step for the on-premises product, to avoid rate limiting.
+            var store = HostContext.GetService<IConfigurationStore>();
+            var isHostedServer = store.GetSettings().IsHostedServer;
+            if (isHostedServer)
+            {
+                IOUtil.DeleteDirectory(HostContext.GetDirectory(WellKnownDirectory.Actions), executionContext.CancellationToken);
+            }
 
             foreach (var action in actions)
             {
@@ -448,7 +454,8 @@ namespace GitHub.Runner.Worker
             ArgUtil.NotNullOrEmpty(repositoryReference.Ref, nameof(repositoryReference.Ref));
 
             string destDirectory = Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Actions), repositoryReference.Name.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar), repositoryReference.Ref);
-            if (File.Exists(destDirectory + ".completed"))
+            string watermarkFile = destDirectory + ".completed";
+            if (CheckWatermark(watermarkFile))
             {
                 executionContext.Debug($"Action '{repositoryReference.Name}@{repositoryReference.Ref}' already downloaded at '{destDirectory}'.");
                 return;
@@ -610,7 +617,7 @@ namespace GitHub.Runner.Worker
                 }
 
                 Trace.Verbose("Create watermark file indicate action download succeed.");
-                File.WriteAllText(destDirectory + ".completed", DateTime.UtcNow.ToString());
+                File.WriteAllText(watermarkFile, DateTime.UtcNow.ToString());
 
                 executionContext.Debug($"Archive '{archiveFile}' has been unzipped into '{destDirectory}'.");
                 Trace.Info("Finished getting action repository.");
@@ -632,6 +639,19 @@ namespace GitHub.Runner.Worker
                     Trace.Warning("Failed to delete temp folder '{0}'. Exception: {1}", tempDirectory, ex);
                 }
             }
+        }
+
+        private bool CheckWatermark(string watermarkFile)
+        {
+            if (!File.Exists(watermarkFile))
+            {
+                return false;
+            }
+
+            var content = File.ReadAllText(watermarkFile);
+            return !string.IsNullOrEmpty(content) &&
+                DateTimeOffset.TryParse(content, out DateTimeOffset created) &&
+                DateTimeOffset.Now - created < TimeSpan.FromDays(1);
         }
 
         private ActionContainer PrepareRepositoryActionAsync(IExecutionContext executionContext, Pipelines.ActionStep repositoryAction)
