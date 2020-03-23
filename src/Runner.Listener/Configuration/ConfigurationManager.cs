@@ -114,6 +114,7 @@ namespace GitHub.Runner.Listener.Configuration
                     Trace.Info("cred retrieved via GitHub auth");
                 }
 
+
                 try
                 {
                     // Determine the service deployment type based on connection data. (Hosted/OnPremises)
@@ -161,10 +162,12 @@ namespace GitHub.Runner.Listener.Configuration
                 runnerSettings.PoolName = agentPool.Name;
             }
 
+
             TaskAgent agent;
             while (true)
             {
                 runnerSettings.AgentName = command.GetRunnerName();
+                runnerSettings.AgentLabels = command.GetLabels();
 
                 _term.WriteLine();
 
@@ -177,7 +180,7 @@ namespace GitHub.Runner.Listener.Configuration
                     if (command.GetReplace())
                     {
                         // Update existing agent with new PublicKey, agent version.
-                        agent = UpdateExistingAgent(agent, publicKey);
+                        agent = UpdateExistingAgent(agent, runnerSettings.AgentLabels, publicKey);
 
                         try
                         {
@@ -200,7 +203,7 @@ namespace GitHub.Runner.Listener.Configuration
                 else
                 {
                     // Create a new agent. 
-                    agent = CreateNewAgent(runnerSettings.AgentName, publicKey);
+                    agent = CreateNewAgent(runnerSettings.AgentName, runnerSettings.AgentLabels, publicKey);
 
                     try
                     {
@@ -459,7 +462,7 @@ namespace GitHub.Runner.Listener.Configuration
         }
 
 
-        private TaskAgent UpdateExistingAgent(TaskAgent agent, RSAParameters publicKey)
+        private TaskAgent UpdateExistingAgent(TaskAgent agent, ISet<string> labels, RSAParameters publicKey)
         {
             ArgUtil.NotNull(agent, nameof(agent));
             agent.Authorization = new TaskAgentAuthorization
@@ -472,13 +475,14 @@ namespace GitHub.Runner.Listener.Configuration
             agent.OSDescription = RuntimeInformation.OSDescription;
 
             agent.Labels.Add("self-hosted");
+            agent.Labels.UnionWith(labels);
             agent.Labels.Add(VarUtil.OS);
             agent.Labels.Add(VarUtil.OSArchitecture);
 
             return agent;
         }
 
-        private TaskAgent CreateNewAgent(string agentName, RSAParameters publicKey)
+        private TaskAgent CreateNewAgent(string agentName, ISet<string> labels, RSAParameters publicKey)
         {
             TaskAgent agent = new TaskAgent(agentName)
             {
@@ -492,6 +496,7 @@ namespace GitHub.Runner.Listener.Configuration
             };
 
             agent.Labels.Add("self-hosted");
+            agent.Labels.UnionWith(labels);
             agent.Labels.Add(VarUtil.OS);
             agent.Labels.Add(VarUtil.OSArchitecture);
 

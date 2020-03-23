@@ -48,7 +48,8 @@ namespace GitHub.Runner.Listener
             Constants.Runner.CommandLine.Args.UserName,
             Constants.Runner.CommandLine.Args.WindowsLogonAccount,
             Constants.Runner.CommandLine.Args.WindowsLogonPassword,
-            Constants.Runner.CommandLine.Args.Work
+            Constants.Runner.CommandLine.Args.Work,
+            Constants.Runner.CommandLine.Args.Labels
         };
 
         // Commands.
@@ -175,6 +176,20 @@ namespace GitHub.Runner.Listener
                 description: "What is your pool admin oauth access token?",
                 defaultValue: string.Empty,
                 validator: Validators.NonEmptyValidator);
+        }
+
+        public ISet<string> GetLabels()
+        {
+            string arg = GetArg(Constants.Runner.CommandLine.Args.Labels);
+            if (string.IsNullOrEmpty(arg))
+            {
+                arg = string.Empty;
+            }
+            var result = new HashSet<String>(StringComparer.OrdinalIgnoreCase);
+            foreach(string label in arg.Split(',')) {
+              result.Add(label.Trim());
+            }
+            return result;
         }
 
         public string GetRunnerRegisterToken()

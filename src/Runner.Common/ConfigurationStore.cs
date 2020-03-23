@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Text;
+using System.Collections.Generic;
 using System.Threading;
 
 namespace GitHub.Runner.Common
@@ -41,6 +42,25 @@ namespace GitHub.Runner.Common
 
         [DataMember(EmitDefaultValue = false)]
         public string MonitorSocketAddress { get; set; }
+
+        public ISet<string> AgentLabels {
+          get
+            {
+                if (m_labels == null)
+                {
+                    m_labels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                }
+                return m_labels;
+            }
+            set {
+              m_labels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+              m_labels.UnionWith(value);
+            }
+
+        }
+
+        [DataMember(IsRequired = false, EmitDefaultValue = false, Name = "AgentLabels")]
+        private HashSet<string> m_labels;
 
         /// <summary>
         // Computed property for convenience. Can either return:
