@@ -86,7 +86,6 @@ namespace GitHub.Runner.Listener.Configuration
 
             RunnerSettings runnerSettings = new RunnerSettings();
 
-            bool isHostedServer = false;
             // Loop getting url and creds until you can connect
             ICredentialProvider credProvider = null;
             VssCredentials creds = null;
@@ -95,8 +94,7 @@ namespace GitHub.Runner.Listener.Configuration
             {
                 // Get the URL
                 var inputUrl = command.GetUrl();
-                if (!inputUrl.Contains("github.com", StringComparison.OrdinalIgnoreCase) &&
-                    !inputUrl.Contains("github.localhost", StringComparison.OrdinalIgnoreCase))
+                if (inputUrl.Contains("codedev.ms", StringComparison.OrdinalIgnoreCase))
                 {
                     runnerSettings.ServerUrl = inputUrl;
                     // Get the credentials
@@ -118,7 +116,7 @@ namespace GitHub.Runner.Listener.Configuration
                 try
                 {
                     // Determine the service deployment type based on connection data. (Hosted/OnPremises)
-                    isHostedServer = await IsHostedServer(runnerSettings.ServerUrl, creds);
+                    runnerSettings.IsHostedServer = runnerSettings.GitHubUrl == null || IsHostedServer(new UriBuilder(runnerSettings.GitHubUrl));
 
                     // Validate can connect.
                     await _runnerServer.ConnectAsync(new Uri(runnerSettings.ServerUrl), creds);
@@ -251,14 +249,6 @@ namespace GitHub.Runner.Listener.Configuration
             {
                 UriBuilder configServerUrl = new UriBuilder(runnerSettings.ServerUrl);
                 UriBuilder oauthEndpointUrlBuilder = new UriBuilder(agent.Authorization.AuthorizationUrl);
-                if (!isHostedServer && Uri.Compare(configServerUrl.Uri, oauthEndpointUrlBuilder.Uri, UriComponents.SchemeAndServer, UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) != 0)
-                {
-                    oauthEndpointUrlBuilder.Scheme = configServerUrl.Scheme;
-                    oauthEndpointUrlBuilder.Host = configServerUrl.Host;
-                    oauthEndpointUrlBuilder.Port = configServerUrl.Port;
-                    Trace.Info($"Set oauth endpoint url's scheme://host:port component to match runner configure url's scheme://host:port: '{oauthEndpointUrlBuilder.Uri.AbsoluteUri}'.");
-                }
-
                 var credentialData = new CredentialData
                 {
                     Scheme = Constants.Configuration.OAuth,
@@ -294,7 +284,7 @@ namespace GitHub.Runner.Listener.Configuration
             {
                 // there are two exception messages server send that indicate clock skew.
                 // 1. The bearer token expired on {jwt.ValidTo}. Current server time is {DateTime.UtcNow}.
-                // 2. The bearer token is not valid until {jwt.ValidFrom}. Current server time is {DateTime.UtcNow}.                
+                // 2. The bearer token is not valid until {jwt.ValidFrom}. Current server time is {DateTime.UtcNow}.
                 Trace.Error("Catch exception during test agent connection.");
                 Trace.Error(ex);
                 throw new Exception("The local machine's clock may be out of sync with the server time by more than five minutes. Please sync your clock with your domain or internet time and try again.");
@@ -384,7 +374,6 @@ namespace GitHub.Runner.Listener.Configuration
                     }
 
                     // Determine the service deployment type based on connection data. (Hosted/OnPremises)
-                    bool isHostedServer = await IsHostedServer(settings.ServerUrl, creds);
                     await _runnerServer.ConnectAsync(new Uri(settings.ServerUrl), creds);
 
                     var agents = await _runnerServer.GetAgentsAsync(settings.PoolId, settings.AgentName);
@@ -407,7 +396,7 @@ namespace GitHub.Runner.Listener.Configuration
                     _term.WriteLine("Cannot connect to server, because config files are missing. Skipping removing runner from the server.");
                 }
 
-                //delete credential config files               
+                //delete credential config files
                 currentAction = "Removing .credentials";
                 if (hasCredentials)
                 {
@@ -421,7 +410,7 @@ namespace GitHub.Runner.Listener.Configuration
                     _term.WriteLine("Does not exist. Skipping " + currentAction);
                 }
 
-                //delete settings config file                
+                //delete settings config file
                 currentAction = "Removing .runner";
                 if (isConfigured)
                 {
@@ -503,31 +492,26 @@ namespace GitHub.Runner.Listener.Configuration
             return agent;
         }
 
-        private async Task<bool> IsHostedServer(string serverUrl, VssCredentials credentials)
+        private bool IsHostedServer(UriBuilder gitHubUrl)
         {
-            // Determine the service deployment type based on connection data. (Hosted/OnPremises)
-            var locationServer = HostContext.GetService<ILocationServer>();
-            VssConnection connection = VssUtil.CreateConnection(new Uri(serverUrl), credentials);
-            await locationServer.ConnectAsync(connection);
-            try
-            {
-                var connectionData = await locationServer.GetConnectionDataAsync();
-                Trace.Info($"Server deployment type: {connectionData.DeploymentType}");
-                return connectionData.DeploymentType.HasFlag(DeploymentFlags.Hosted);
-            }
-            catch (Exception ex)
-            {
-                // Since the DeploymentType is Enum, deserialization exception means there is a new Enum member been added.
-                // It's more likely to be Hosted since OnPremises is always behind and customer can update their agent if are on-prem
-                Trace.Error(ex);
-                return true;
-            }
+            return string.Equals(gitHubUrl.Host, "github.com", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(gitHubUrl.Host, "www.github.com", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(gitHubUrl.Host, "github.localhost", StringComparison.OrdinalIgnoreCase);
         }
 
         private async Task<GitHubAuthResult> GetTenantCredential(string githubUrl, string githubToken, string runnerEvent)
         {
+            var githubApiUrl = "";
             var gitHubUrlBuilder = new UriBuilder(githubUrl);
-            var githubApiUrl = $"{gitHubUrlBuilder.Scheme}://api.{gitHubUrlBuilder.Host}/actions/runner-registration";
+            if (IsHostedServer(gitHubUrlBuilder))
+            {
+                githubApiUrl = $"{gitHubUrlBuilder.Scheme}://api.{gitHubUrlBuilder.Host}/actions/runner-registration";
+            }
+            else
+            {
+                githubApiUrl = $"{gitHubUrlBuilder.Scheme}://{gitHubUrlBuilder.Host}/api/v3/actions/runner-registration";
+            }
+
             using (var httpClientHandler = HostContext.CreateHttpClientHandler())
             using (var httpClient = new HttpClient(httpClientHandler))
             {
